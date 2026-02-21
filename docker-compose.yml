@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # 1. 캐시 창고 (Redis)
+  redis:
+    image: redis:alpine
+    container_name: lumos-redis
+    volumes:
+      - ./data:/data  # EC2의 data 폴더와 Redis 내부 폴더 연결 (영구 저장)
+    command: redis-server --appendonly yes # 디스크에 캐시 백업 활성화
+    networks:
+      - lumos-network
+
+  # 2. 서버측 (Backend App)
+  backend:
+    build: ./backend  # 아까 만든 backend 폴더의 Dockerfile을 읽어서 만듦
+    container_name: lumos-backend
+    env_file:
+      - .env          # 아까 만든 비밀번호 금고를 여기에 주입!
+    ports:
+      - "8000:8000"   # 나중에 테스트 편하게 하려고 EC2 8000번 포트도 살짝 열어둠
+    depends_on:
+      - redis         # Redis가 켜진 다음에 백엔드를 켜라!
+    networks:
+      - lumos-network
+
+  # 3. 인프라단  (Nginx 프록시)
+  nginx:
+    image: nginx:alpine
+    container_name: lumos-nginx
+    ports:
+      - "80:80"       # 외부에서 들어오는 80번(HTTP) 문 개방
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro # 우리가 짠 설정 파일을 Nginx에 덮어씌움
+    depends_on:
+      - backend       # 백엔드가 켜진 다음에 Nginx를 켜라!
+    networks:
+      - lumos-network
+
+# 4. 우리만의 내부 통신망 (이 망 안에서는 이름으로 통신 가능)
+networks:
+  lumos-network:
+    driver: bridge
